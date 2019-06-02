@@ -1,33 +1,7 @@
-"""
-Created on May 22, 2016
-
-This should be a simple minimalist run file. It's only responsibility should be to parse the arguments (which agent, user simulator to use) and launch a dialog simulation.
-
-Rule-agent: python run.py --agt 6 --usr 1 --max_turn 40 --episodes 150 --movie_kb_path .\deep_dialog\data\movie_kb.1k.p --run_mode 2
-
-movie_kb:
-movie_kb.1k.p: 94% success rate
-movie_kb.v2.p: 36% success rate
-
-user goal files:
-first turn: user_goals_first_turn_template.v2.p
-all turns: user_goals_all_turns_template.p
-user_goals_first_turn_template.part.movie.v1.p: a subset of user goal. [Please use this one, the upper bound success rate on movie_kb.1k.json is 0.9765.]
-
-Commands:
-Rule: python run.py --agt 5 --usr 1 --max_turn 40 --episodes 150 --movie_kb_path .\deep_dialog\data\movie_kb.1k.p --goal_file_path .\deep_dialog\data\user_goals_first_turn_template.part.movie.v1.p --intent_err_prob 0.00 --slot_err_prob 0.00 --episodes 500 --act_level 1 --run_mode 1
-
-Training:
-RL: python run.py --agt 9 --usr 1 --max_turn 40 --movie_kb_path .\deep_dialog\data\movie_kb.1k.p --dqn_hidden_size 80 --experience_replay_pool_size 1000 --episodes 500 --simulation_epoch_size 100 --write_model_dir .\deep_dialog\checkpoints\rl_agent\ --run_mode 3 --act_level 0 --slot_err_prob 0.05 --intent_err_prob 0.00 --batch_size 16 --goal_file_path .\deep_dialog\data\user_goals_first_turn_template.part.movie.v1.p --warm_start 1 --warm_start_epochs 120
-
-Predict:
-RL: python run.py --agt 9 --usr 1 --max_turn 40 --movie_kb_path .\deep_dialog\data\movie_kb.1k.p --dqn_hidden_size 80 --experience_replay_pool_size 1000 --episodes 300 --simulation_epoch_size 100 --write_model_dir .\deep_dialog\checkpoints\rl_agent\ --slot_err_prob 0.00 --intent_err_prob 0.00 --batch_size 16 --goal_file_path .\deep_dialog\data\user_goals_first_turn_template.part.movie.v1.p --episodes 200 --trained_model_path .\deep_dialog\checkpoints\rl_agent\agt_9_22_30_0.37000.p --run_mode 3
-
-@author: xiul, t-zalipt
-"""
 
 
 import argparse, json, copy, os
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 import cPickle as pickle
 
 from deep_dialog.dialog_system import DialogManager, text_to_dict
@@ -101,8 +75,24 @@ if __name__ == "__main__":
     args = parser.parse_args()
     params = vars(args)
 
-    print 'Dialog Parameters: '
+
+
+    print 'Dialog Parametersssssss: '
     print json.dumps(params, indent=2)
+
+
+
+# Add command handler to dispatcher
+def start(bot, update):
+    update.message.reply_text("I'm a bot, Nice to meet you!")
+
+
+updater = Updater('711175764:AAF246tiozHEgHgbBbbWHkZCLZB_Uzd1pLk')
+dispatcher = updater.dispatcher
+print 'Bot started'
+start_handler = CommandHandler('start', start)
+dispatcher.add_handler(start_handler)
+
 
 
 max_turn = params['max_turn']
@@ -260,6 +250,10 @@ performance_records['ave_turns'] = {}
 performance_records['ave_reward'] = {}
 
 
+
+
+
+
 """ Save model """
 def save_model(path, agt, success_rate, agent, best_epoch, cur_epoch):
     filename = 'agt_%s_%s_%s_%.5f.p' % (agt, best_epoch, cur_epoch, success_rate)
@@ -286,7 +280,7 @@ def save_performance_records(path, agt, records):
         print e
 
 """ Run N simulation Dialogues """
-def simulation_epoch(simulation_epoch_size):
+def simulation_epoch(simulation_epoch_size, bot=None, update = None):
     successes = 0
     cumulative_reward = 0
     cumulative_turns = 0
@@ -296,7 +290,7 @@ def simulation_epoch(simulation_epoch_size):
         dialog_manager.initialize_episode()
         episode_over = False
         while(not episode_over):
-            episode_over, reward = dialog_manager.next_turn()
+            episode_over, reward = dialog_manager.next_turn(bot, update)
             cumulative_reward += reward
             if episode_over:
                 if reward > 0: 
@@ -312,7 +306,7 @@ def simulation_epoch(simulation_epoch_size):
     return res
 
 """ Warm_Start Simulation (by Rule Policy) """
-def warm_start_simulation():
+def warm_start_simulation(bot=None, update=None):
     successes = 0
     cumulative_reward = 0
     cumulative_turns = 0
@@ -323,7 +317,7 @@ def warm_start_simulation():
         dialog_manager.initialize_episode()
         episode_over = False
         while(not episode_over):
-            episode_over, reward = dialog_manager.next_turn()
+            episode_over, reward = dialog_manager.next_turn(bot, update)
             cumulative_reward += reward
             if episode_over:
                 if reward > 0: 
@@ -346,7 +340,7 @@ def warm_start_simulation():
 
 
 
-def run_episodes(count, status):
+def run_episodes(count, status, bot, update):
     successes = 0
     cumulative_reward = 0
     cumulative_turns = 0
@@ -358,18 +352,18 @@ def run_episodes(count, status):
     
     for episode in xrange(count):
         print ("Episode: %s" % (episode))
-        dialog_manager.initialize_episode()
+        dialog_manager.initialize_episode(bot, update)
         episode_over = False
         
         while(not episode_over):
-            episode_over, reward = dialog_manager.next_turn()
+            episode_over, reward = dialog_manager.next_turn(bot, update)
             cumulative_reward += reward
                 
             if episode_over:
                 if reward > 0:
-                    print ("Successful Dialog!")
+                    update.message.reply_text ("Successful Dialog!")
                     successes += 1
-                else: print ("Failed Dialog!")
+                else: update.message.reply_text ("Failed Dialog!")
                 
                 cumulative_turns += dialog_manager.state_tracker.turn_count
         
@@ -411,5 +405,14 @@ def run_episodes(count, status):
     if agt == 9 and params['trained_model_path'] == None:
         save_model(params['write_model_dir'], agt, float(successes)/count, best_model['model'], best_res['epoch'], count)
         save_performance_records(params['write_model_dir'], agt, performance_records)
-    
-run_episodes(num_episodes, status)
+
+
+def convert_uppercase(bot, update):
+    # update.message.reply_text(update.message.text.upper())
+    run_episodes(num_episodes, status, bot, update)
+
+
+upper_case = CommandHandler('try', convert_uppercase)
+dispatcher.add_handler(upper_case)
+updater.start_polling()
+
